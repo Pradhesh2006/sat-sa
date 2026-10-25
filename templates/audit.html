@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — SAT-SA{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('dashboard') }}" class="back-link">&larr; Back to dashboard</a>
+<div class="page-head"><h1>Audit Log</h1><span class="timestamp">Most recent 200 events</span></div>
+
+<section class="panel">
+    <div class="table-wrap">
+    <table>
+        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
+        <tbody>
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.created_at[:19].replace('T', ' ') }}</td>
+            <td>{{ log.username }}</td>
+            <td><span class="mitre-tag">{{ log.action }}</span></td>
+            <td>{{ log.detail }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endblock %}

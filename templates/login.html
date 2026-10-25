@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — SAT-SA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="scanline-overlay" aria-hidden="true"></div>
+    <div class="boot-screen" id="bootScreen">
+        <div class="boot-lines" id="bootLines"></div>
+    </div>
+
+    <div class="login-wrap" id="loginWrap" style="display:none;">
+        <div class="login-card">
+            <div class="brand login-brand">
+                <span class="shield">🛡</span>
+                <div>
+                    <div class="brand-title">SAT-SA</div>
+                    <div class="brand-sub">Supervisory Analytics Tool for SOC Assessment</div>
+                </div>
+            </div>
+
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    {% for m in messages %}
+                        <p class="login-error">{{ m }}</p>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" class="login-form">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+                <button type="submit" class="login-btn">Sign In</button>
+            </form>
+
+            <p class="login-hint">Supervisor demo login: <code>admin</code> / <code>admin123</code></p>
+            <p class="login-hint">Analyst demo login: <code>ananya</code> / <code>analyst123</code></p>
+        </div>
+    </div>
+
+    <script>
+        const bootMessages = [
+            'sat-sa boot v1.0 — initializing supervisory analytics core',
+            'mounting alert database ................. OK',
+            'loading MITRE ATT&CK technique map ....... OK',
+            'starting SLA compliance engine ........... OK',
+            'verifying session integrity .............. OK',
+            'awaiting operator credentials ............'
+        ];
+
+        const bootLinesEl = document.getElementById('bootLines');
+        const bootScreenEl = document.getElementById('bootScreen');
+        const loginWrapEl = document.getElementById('loginWrap');
+
+        // Skip the boot animation on repeat visits within the same tab session.
+        if (sessionStorage.getItem('satsa_booted') === '1') {
+            bootScreenEl.style.display = 'none';
+            loginWrapEl.style.display = 'flex';
+        } else {
+            let msgIndex = 0;
+
+            function typeLine(text, callback) {
+                const line = document.createElement('div');
+                line.className = 'boot-line';
+                bootLinesEl.appendChild(line);
+                let i = 0;
+                const speed = 10;
+                const timer = setInterval(() => {
+                    line.textContent = text.slice(0, i + 1);
+                    i++;
+                    if (i >= text.length) {
+                        clearInterval(timer);
+                        setTimeout(callback, 90);
+                    }
+                }, speed);
+            }
+
+            function nextLine() {
+                if (msgIndex < bootMessages.length) {
+                    typeLine(bootMessages[msgIndex], nextLine);
+                    msgIndex++;
+                } else {
+                    sessionStorage.setItem('satsa_booted', '1');
+                    setTimeout(() => {
+                        bootScreenEl.style.opacity = '0';
+                        setTimeout(() => {
+                            bootScreenEl.style.display = 'none';
+                            loginWrapEl.style.display = 'flex';
+                        }, 300);
+                    }, 350);
+                }
+            }
+            nextLine();
+        }
+    </script>
+</body>
+</html>

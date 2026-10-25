@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}SAT-SA{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="scanline-overlay" aria-hidden="true"></div>
+    <header class="topbar">
+        <div class="brand">
+            <span class="shield">🛡</span>
+            <div>
+                <div class="brand-title">SAT-SA</div>
+                <div class="brand-sub">Supervisory Analytics Tool for SOC Assessment</div>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <span class="live-clock" id="liveClock"><span class="live-dot"></span><span id="clockText">--:--:--</span></span>
+            {% if session.get('role') == 'Supervisor' %}
+                <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+                <a href="{{ url_for('upload') }}" class="nav-link nav-link-outline">Upload Data</a>
+                <a href="{{ url_for('audit') }}" class="nav-link nav-link-outline">Audit Log</a>
+            {% elif session.get('analyst_id') %}
+                <a href="{{ url_for('analyst_detail', analyst_id=session['analyst_id']) }}" class="nav-link">My Performance</a>
+            {% endif %}
+            {% if session.get('username') %}
+                <span class="user-pill">👤 {{ session['username'] }} <span class="role-tag">{{ session.get('role') }}</span></span>
+                <a href="{{ url_for('logout') }}" class="nav-link nav-link-outline">Logout</a>
+            {% endif %}
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-wrap">
+            {% for m in messages %}
+                <p class="flash-msg">{{ m }}</p>
+            {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="footer">Prototype build — sample data for demonstration only</footer>
+    <script>
+        function tickClock() {
+            const now = new Date();
+            const txt = now.toLocaleTimeString('en-IN', { hour12: false });
+            const el = document.getElementById('clockText');
+            if (el) el.textContent = txt;
+        }
+        tickClock();
+        setInterval(tickClock, 1000);
+    </script>
+</body>
+</html>

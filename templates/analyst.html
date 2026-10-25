@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}{{ analyst.name }} — SAT-SA{% endblock %}
+
+{% block content %}
+{% if is_supervisor %}
+<a href="{{ url_for('dashboard') }}" class="back-link">&larr; Back to dashboard</a>
+{% endif %}
+
+<div class="page-head">
+    <h1>{{ analyst.name }}</h1>
+    <span class="timestamp">{{ analyst.shift }}</span>
+</div>
+
+{% if stats %}
+<section class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-value">{{ stats.total_alerts }}</div>
+        <div class="kpi-label">Total Alerts Handled</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ stats.avg_response }}<span class="kpi-unit">min</span></div>
+        <div class="kpi-label">Avg. Response Time</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ stats.accuracy }}<span class="kpi-unit">%</span></div>
+        <div class="kpi-label">Accuracy</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ stats.sla_compliance }}<span class="kpi-unit">%</span></div>
+        <div class="kpi-label">SLA Compliance</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ stats.escalated }}</div>
+        <div class="kpi-label">Escalated Cases</div>
+    </div>
+</section>
+
+{% if stats.flags %}
+<section class="panel">
+    <h2>Supervisor Notes</h2>
+    {% for f in stats.flags %}
+        <p class="note-item">⚠ {{ f }}</p>
+    {% endfor %}
+    <p class="note-hint">Suggested action: review recent cases below and consider targeted coaching or shift rebalancing.</p>
+</section>
+{% endif %}
+{% endif %}
+
+<section class="panel">
+    <h2>This Week vs Last Week</h2>
+    <div class="compare-grid">
+        <div class="compare-item">
+            <div class="compare-label">Alert Volume</div>
+            <div class="compare-value">{{ comparison.this_week.count }}
+                <span class="{{ 'delta-up' if comparison.count_delta >= 0 else 'delta-down' }}">
+                    {{ '+' if comparison.count_delta >= 0 else '' }}{{ comparison.count_delta }}%
+                </span>
+            </div>
+        </div>
+        <div class="compare-item">
+            <div class="compare-label">Avg Response Time</div>
+            <div class="compare-value">{{ comparison.this_week.avg_response }} min
+                <span class="{{ 'delta-down' if comparison.response_delta <= 0 else 'delta-up' }}">
+                    {{ '+' if comparison.response_delta >= 0 else '' }}{{ comparison.response_delta }}%
+                </span>
+            </div>
+        </div>
+        <div class="compare-item">
+            <div class="compare-label">Accuracy</div>
+            <div class="compare-value">{{ comparison.this_week.accuracy }}%
+                <span class="{{ 'delta-up' if comparison.accuracy_delta >= 0 else 'delta-down' }}">
+                    {{ '+' if comparison.accuracy_delta >= 0 else '' }}{{ comparison.accuracy_delta }}%
+                </span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Response Trend (weekly)</h2>
+    <div class="chart-wrap"><canvas id="trendChart" height="90"></canvas></div>
+</section>
+
+<section class="panel">
+    <h2>Workload Heatmap</h2>
+    <div class="table-wrap">
+    <table class="heatmap-table">
+        <thead><tr><th></th>{% for h in range(24) %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for day in heatmap_days %}
+            <tr>
+                <td class="heatmap-daylabel">{{ day }}</td>
+                {% for count in heatmap[loop.index0] %}
+                    <td class="heatmap-cell" style="background: rgba(0, 212, 255, {{ (count / 8) if count < 8 else 1 }});" title="{{ count }} alerts">
+                        {% if count > 0 %}{{ count }}{% endif %}
+                    </td>
+                {% endfor %}
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Performance by Alert Type (MITRE ATT&amp;CK mapped)</h2>
+    <div class="table-wrap">
+    <table>
+        <thead><tr><th>Alert Type</th><th>MITRE Technique</th><th>Tactic</th><th>Handled</th><th>True Positive Rate</th></tr></thead>
+        <tbody>
+        {% for t, d in type_breakdown.items() %}
+        <tr>
+            <td>{{ t }}</td>
+            <td><span class="mitre-tag" title="{{ mitre_map[t].name }}">{{ mitre_map[t].id }}</span></td>
+            <td>{{ mitre_map[t].tactic }}</td>
+            <td>{{ d.count }}</td>
+            <td>{{ ((d.true_pos / d.count) * 100) | round(1) }}%</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Recent Alerts</h2>
+    <div class="table-wrap">
+    <table>
+        <thead>
+        <tr><th>Date</th><th>Type</th><th>MITRE</th><th>Severity</th><th>Response</th><th>SLA</th><th>Classification</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% for a in alerts %}
+        <tr>
+            <td>{{ a.opened_at[:16].replace('T', ' ') }}</td>
+            <td>{{ a.alert_type }}</td>
+            <td><span class="mitre-tag" title="{{ a.mitre.name }}">{{ a.mitre.id }}</span></td>
+            <td><span class="sev sev-{{ a.severity|lower }}">{{ a.severity }}</span></td>
+            <td>{{ a.response_minutes }} min</td>
+            <td>
+                {% if a.within_sla %}
+                    <span class="ok-pill">Within {{ a.sla_target }}m</span>
+                {% else %}
+                    <span class="flag-pill">Missed {{ a.sla_target }}m</span>
+                {% endif %}
+            </td>
+            <td>{{ a.classification }}</td>
+            <td>{{ a.status }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
+<script>
+const trendLabels = {{ trend | map(attribute='week') | list | tojson }};
+const trendResponse = {{ trend | map(attribute='avg_response') | list | tojson }};
+const trendAccuracy = {{ trend | map(attribute='accuracy') | list | tojson }};
+
+new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+        labels: trendLabels,
+        datasets: [
+            {
+                label: 'Avg Response (min)',
+                data: trendResponse,
+                borderColor: '#00d4ff',
+                backgroundColor: 'rgba(0,212,255,0.12)',
+                yAxisID: 'y',
+                tension: 0.3,
+            },
+            {
+                label: 'Accuracy (%)',
+                data: trendAccuracy,
+                borderColor: '#ffb020',
+                backgroundColor: 'rgba(255,176,32,0.08)',
+                yAxisID: 'y1',
+                tension: 0.3,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            y: { type: 'linear', position: 'left', ticks: { color: '#5b7083' }, grid: { color: '#1c2938' } },
+            y1: { type: 'linear', position: 'right', ticks: { color: '#5b7083' }, grid: { drawOnChartArea: false } },
+            x: { ticks: { color: '#5b7083' }, grid: { color: '#1c2938' } }
+        },
+        plugins: { legend: { labels: { color: '#cbd5e1', font: { family: 'IBM Plex Mono', size: 11 } } } }
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Upload Data — SAT-SA{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('dashboard') }}" class="back-link">&larr; Back to dashboard</a>
+<div class="page-head"><h1>Upload Alert Data (CSV)</h1></div>
+
+<section class="panel">
+    <p class="note-hint">
+        Replace sample data with a real export from your SIEM/SOAR. The CSV must include these columns:
+    </p>
+    <p class="mitre-tag" style="display:block; white-space:normal; padding:10px;">
+        {{ required_columns | join(', ') }}
+    </p>
+    <p class="note-hint">
+        <code>analyst_name</code> is matched to existing analysts, or a new analyst is created automatically.
+        <code>opened_at</code> should be ISO format, e.g. <code>2026-09-05T14:30:00</code>.
+        <code>classification</code> must be <code>True Positive</code> or <code>False Positive</code>.
+        <code>status</code> must be <code>Resolved</code> or <code>Escalated</code>.
+    </p>
+
+    <form method="POST" enctype="multipart/form-data" class="upload-form">
+        <input type="file" name="csv_file" accept=".csv" required>
+        <button type="submit" class="login-btn filter-btn">Import CSV</button>
+    </form>
+
+    {% if result %}
+    <div class="notify-banner" style="margin-top:16px;">
+        Imported {{ result.inserted }} rows, skipped {{ result.skipped }}.
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

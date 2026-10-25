@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — SAT-SA{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>SOC Supervisory Dashboard</h1>
+    <span class="timestamp">Last updated: {{ generated_at }}</span>
+</div>
+
+{% if newly_flagged %}
+<div class="notify-banner">
+    🔔 New flag{{ 's' if newly_flagged|length > 1 else '' }} since last check:
+    <strong>{{ newly_flagged|join(', ') }}</strong> — review recommended.
+</div>
+{% endif %}
+
+<section class="panel feed-panel">
+    <h2><span class="live-dot"></span> Live Alert Feed</h2>
+    <div class="feed-terminal" id="feedTerminal"></div>
+</section>
+
+<section class="panel filter-panel">
+    <form method="GET" class="filter-form">
+        <div class="filter-field">
+            <label>From</label>
+            <input type="date" name="start" value="{{ filters.start }}">
+        </div>
+        <div class="filter-field">
+            <label>To</label>
+            <input type="date" name="end" value="{{ filters.end }}">
+        </div>
+        <div class="filter-field">
+            <label>Severity</label>
+            <select name="severity">
+                <option value="">All</option>
+                {% for sev in all_severities %}
+                <option value="{{ sev }}" {% if filters.severity == sev %}selected{% endif %}>{{ sev }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Alert Type</label>
+            <select name="alert_type">
+                <option value="">All</option>
+                {% for t in all_alert_types %}
+                <option value="{{ t }}" {% if filters.alert_type == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Shift</label>
+            <select name="shift">
+                <option value="">All</option>
+                {% for sh in all_shifts %}
+                <option value="{{ sh }}" {% if filters.shift == sh %}selected{% endif %}>{{ sh }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-field filter-search">
+            <label>Search</label>
+            <input type="text" name="q" placeholder="Analyst or alert type..." value="{{ filters.q }}">
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="login-btn filter-btn">Apply</button>
+            {% if filters_active %}
+                <a href="{{ url_for('dashboard') }}" class="nav-link nav-link-outline">Clear</a>
+            {% endif %}
+        </div>
+    </form>
+    <div class="export-row">
+        <a class="export-link" href="{{ url_for('export_alerts_csv', **filters) }}">⬇ Alerts CSV</a>
+        <a class="export-link" href="{{ url_for('export_summary_csv', **filters) }}">⬇ Summary CSV</a>
+        <a class="export-link" href="{{ url_for('export_report_pdf', **filters) }}">⬇ PDF Report</a>
+    </div>
+</section>
+
+<section class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-value">{{ total_alerts }}</div>
+        <div class="kpi-label">Alerts (filtered)</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ team_avg_response }}<span class="kpi-unit">min</span></div>
+        <div class="kpi-label">Avg. Response Time</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ team_avg_accuracy }}<span class="kpi-unit">%</span></div>
+        <div class="kpi-label">Team Accuracy</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ team_sla }}<span class="kpi-unit">%</span></div>
+        <div class="kpi-label">SLA Compliance</div>
+    </div>
+    <div class="kpi-card {% if flagged_count > 0 %}kpi-warn{% endif %}">
+        <div class="kpi-value">{{ flagged_count }}</div>
+        <div class="kpi-label">Analysts Flagged</div>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>This Week vs Last Week</h2>
+    <div class="compare-grid">
+        <div class="compare-item">
+            <div class="compare-label">Alert Volume</div>
+            <div class="compare-value">{{ comparison.this_week.count }}
+                <span class="{{ 'delta-up' if comparison.count_delta >= 0 else 'delta-down' }}">
+                    {{ '+' if comparison.count_delta >= 0 else '' }}{{ comparison.count_delta }}%
+                </span>
+            </div>
+        </div>
+        <div class="compare-item">
+            <div class="compare-label">Avg Response Time</div>
+            <div class="compare-value">{{ comparison.this_week.avg_response }} min
+                <span class="{{ 'delta-down' if comparison.response_delta <= 0 else 'delta-up' }}">
+                    {{ '+' if comparison.response_delta >= 0 else '' }}{{ comparison.response_delta }}%
+                </span>
+            </div>
+        </div>
+        <div class="compare-item">
+            <div class="compare-label">Accuracy</div>
+            <div class="compare-value">{{ comparison.this_week.accuracy }}%
+                <span class="{{ 'delta-up' if comparison.accuracy_delta >= 0 else 'delta-down' }}">
+                    {{ '+' if comparison.accuracy_delta >= 0 else '' }}{{ comparison.accuracy_delta }}%
+                </span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Response Time & Volume Trend (weekly)</h2>
+    <div class="chart-wrap"><canvas id="trendChart" height="90"></canvas></div>
+</section>
+
+<section class="panel">
+    <h2>Workload Heatmap (alerts by day &amp; hour)</h2>
+    <div class="table-wrap">
+    <table class="heatmap-table">
+        <thead>
+            <tr><th></th>{% for h in range(24) %}<th>{{ h }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+        {% for day in heatmap_days %}
+            <tr>
+                <td class="heatmap-daylabel">{{ day }}</td>
+                {% for count in heatmap[loop.index0] %}
+                    {% set intensity = [count * 12, 255] | min %}
+                    <td class="heatmap-cell" style="background: rgba(0, 212, 255, {{ (count / 8) if count < 8 else 1 }});" title="{{ count }} alerts">
+                        {% if count > 0 %}{{ count }}{% endif %}
+                    </td>
+                {% endfor %}
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Shift Comparison</h2>
+    <div class="table-wrap">
+    <table>
+        <thead><tr><th>Shift</th><th>Alerts</th><th>Avg Response</th><th>Accuracy</th><th>SLA Compliance</th></tr></thead>
+        <tbody>
+        {% for s in shift_stats %}
+        <tr>
+            <td>{{ s.shift }}</td>
+            <td>{{ s.total_alerts }}</td>
+            <td>{{ s.avg_response }} min</td>
+            <td>{{ s.accuracy }}%</td>
+            <td>{{ s.sla_compliance }}%</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Analyst Performance</h2>
+    <div class="table-wrap">
+    <table>
+        <thead>
+        <tr>
+            <th>Analyst</th>
+            <th>Shift</th>
+            <th>Alerts</th>
+            <th>Avg. Response</th>
+            <th>Avg. Resolution</th>
+            <th>Accuracy</th>
+            <th>False Positive %</th>
+            <th>SLA %</th>
+            <th>Flags</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for s in stats %}
+        <tr>
+            <td><a href="{{ url_for('analyst_detail', analyst_id=s.id, **filters) }}" class="row-link">{{ s.name }}</a></td>
+            <td>{{ s.shift }}</td>
+            <td>{{ s.total_alerts }}</td>
+            <td>{{ s.avg_response }} min</td>
+            <td>{{ s.avg_resolution }} min</td>
+            <td>
+                <span class="badge {% if s.accuracy >= 90 %}badge-good{% elif s.accuracy >= 75 %}badge-mid{% else %}badge-bad{% endif %}">
+                    {{ s.accuracy }}%
+                </span>
+            </td>
+            <td>{{ s.fp_rate }}%</td>
+            <td>
+                <span class="badge {% if s.sla_compliance >= 85 %}badge-good{% elif s.sla_compliance >= 70 %}badge-mid{% else %}badge-bad{% endif %}">
+                    {{ s.sla_compliance }}%
+                </span>
+            </td>
+            <td>
+                {% if s.flags %}
+                    {% for f in s.flags %}
+                        <span class="flag-pill">{{ f }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="ok-pill">On track</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
+<section class="panel-grid">
+    <div class="panel">
+        <h2>🏆 Fastest Response</h2>
+        <ol class="rank-list">
+        {% for s in by_speed[:3] %}
+            <li><a href="{{ url_for('analyst_detail', analyst_id=s.id) }}">{{ s.name }}</a> — {{ s.avg_response }} min</li>
+        {% endfor %}
+        </ol>
+    </div>
+    <div class="panel">
+        <h2>🎯 Highest Accuracy</h2>
+        <ol class="rank-list">
+        {% for s in by_accuracy[:3] %}
+            <li><a href="{{ url_for('analyst_detail', analyst_id=s.id) }}">{{ s.name }}</a> — {{ s.accuracy }}%</li>
+        {% endfor %}
+        </ol>
+    </div>
+    <div class="panel">
+        <h2>📊 Highest Workload</h2>
+        <ol class="rank-list">
+        {% for s in by_volume[:3] %}
+            <li><a href="{{ url_for('analyst_detail', analyst_id=s.id) }}">{{ s.name }}</a> — {{ s.total_alerts }} alerts</li>
+        {% endfor %}
+        </ol>
+    </div>
+</section>
+
+<script>
+const feedData = {{ live_feed | tojson }};
+const feedEl = document.getElementById('feedTerminal');
+let feedIndex = 0;
+
+function severityClass(sev) {
+    return 'sev-' + sev.toLowerCase();
+}
+
+function pushFeedLine() {
+    if (!feedEl || feedData.length === 0) return;
+    const item = feedData[feedIndex % feedData.length];
+    feedIndex++;
+
+    const line = document.createElement('div');
+    line.className = 'feed-line';
+    line.innerHTML =
+        '<span class="feed-time">' + item.date + ' ' + item.time + '</span>' +
+        '<span class="feed-sev ' + severityClass(item.severity) + '">' + item.severity + '</span>' +
+        '<span class="feed-mitre">' + item.mitre + '</span>' +
+        '<span class="feed-text">' + item.type + ' — ' + item.analyst + '</span>' +
+        '<span class="feed-class">' + item.classification + '</span>';
+
+    feedEl.prepend(line);
+    while (feedEl.children.length > 10) {
+        feedEl.removeChild(feedEl.lastChild);
+    }
+}
+
+for (let i = 0; i < 6; i++) { pushFeedLine(); }
+setInterval(pushFeedLine, 2600);
+
+const trendLabels = {{ trend | map(attribute='week') | list | tojson }};
+const trendResponse = {{ trend | map(attribute='avg_response') | list | tojson }};
+const trendCount = {{ trend | map(attribute='count') | list | tojson }};
+
+new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+        labels: trendLabels,
+        datasets: [
+            {
+                label: 'Avg Response (min)',
+                data: trendResponse,
+                borderColor: '#00d4ff',
+                backgroundColor: 'rgba(0,212,255,0.12)',
+                yAxisID: 'y',
+                tension: 0.3,
+            },
+            {
+                label: 'Alert Volume',
+                data: trendCount,
+                borderColor: '#ffb020',
+                backgroundColor: 'rgba(255,176,32,0.08)',
+                yAxisID: 'y1',
+                tension: 0.3,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            y: { type: 'linear', position: 'left', ticks: { color: '#5b7083' }, grid: { color: '#1c2938' } },
+            y1: { type: 'linear', position: 'right', ticks: { color: '#5b7083' }, grid: { drawOnChartArea: false } },
+            x: { ticks: { color: '#5b7083' }, grid: { color: '#1c2938' } }
+        },
+        plugins: { legend: { labels: { color: '#cbd5e1', font: { family: 'IBM Plex Mono', size: 11 } } } }
+    }
+});
+</script>
+{% endblock %}
